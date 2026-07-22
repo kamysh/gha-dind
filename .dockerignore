@@ -1,0 +1,7 @@
+# Keep the build context tiny — only the Dockerfile, the two entry scripts, and
+# dl/<runner-tarball> are needed. Ignore everything else so `docker build .`
+# doesn't ship caches/secrets into the daemon.
+*
+!Dockerfile
+!runner-entry.sh
+!dl/actions-runner-linux-x64-*.tar.gz

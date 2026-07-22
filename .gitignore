@@ -1,0 +1,21 @@
+# Host-generated runtime artifacts (never committed).
+# NOTE: gitignore does NOT support trailing inline comments on a pattern line —
+# the comment becomes part of the pattern and it stops matching. Keep comments
+# on their own lines.
+
+# persistent Go / npm caches mounted into the container
+/cache/
+
+# fine-grained PAT — NEVER commit
+/secrets/
+
+# local configuration (copy config.env.example to config.env)
+/config.env
+
+# downloaded actions-runner tarball
+/dl/
+
+# leftover from the removed nix/microVM guest-handoff path
+/guest-in/
+
+*.log

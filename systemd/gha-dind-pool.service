@@ -1,0 +1,49 @@
+# gha-dind-pool.service — boot-persistent runner pool.
+#
+# Runs pool.sh under one process group; pool.sh fans out N ephemeral runner.sh
+# slots (each an isolated DinD runner container). systemd is WHO STARTS THE
+# RUNNERS: on boot, and it restarts the pool if it dies.
+#
+# On a NixOS host the authoritative way to install a unit is a NixOS module
+# (systemd.services.gha-dind-pool in /etc/nixos) — see README "Boot-persistent
+# pool". This file is the reference/plain-systemd equivalent for a non-NixOS host
+# or a quick `systemctl --user` test.
+#
+# Install (plain systemd, run as the docker-group user):
+#   mkdir -p ~/.config/systemd/user
+#   cp systemd/gha-dind-pool.service ~/.config/systemd/user/
+#   systemctl --user daemon-reload
+#   systemctl --user enable --now gha-dind-pool
+#   loginctl enable-linger "$USER"     # so it runs without an active login session
+#
+# Adjust WorkingDirectory / EnvironmentFile below to match your checkout.
+
+[Unit]
+Description=gha-dind ephemeral GitHub Actions runner pool
+# The host docker daemon must be up before we launch runner containers.
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/gha-dind
+# The SAME literal KEY=VALUE file the scripts read — that is why config.env
+# carries no shell expansion (systemd would not expand it). POOL_SIZE from here
+# sets the slot count, so pool size lives in ONE place instead of being
+# hardcoded in this unit. Size it to the width of the job matrix you want to run
+# without queuing; a pool smaller than the matrix just means jobs queue.
+EnvironmentFile=%h/gha-dind/config.env
+# Invoke bash explicitly — do NOT rely on pool.sh's #!/usr/bin/env bash shebang
+# (under a minimal systemd env there may be no /usr/bin/env to exec → 203/EXEC).
+# On a plain-systemd host bash is at /usr/bin/bash or /bin/bash; on NixOS use the
+# NixOS module in the README (it passes ${pkgs.bash}/bin/bash + bash on `path`).
+ExecStart=/usr/bin/env bash %h/gha-dind/pool.sh
+# pool.sh traps SIGTERM and stops every slot cleanly (each runner.sh removes its
+# container). Give the in-flight jobs a moment to tear down.
+KillSignal=SIGTERM
+TimeoutStopSec=120
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=default.target
