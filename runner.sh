@@ -54,7 +54,7 @@ docker image inspect "$DIND_IMAGE" >/dev/null 2>&1 \
 PAT="$(tr -d '\r\n' < "$PAT_FILE")"
 
 # --- one-time host setup (idempotent): trusted network + cache dirs ---
-mkdir -p "$CACHE_DIR"/{go,gomod,gopath,npm}
+mkdir -p "$CACHE_DIR"/{go,gomod,gopath,npm,buildkit,dhall}
 
 if ! docker network inspect "$DIND_NET" >/dev/null 2>&1; then
   docker network create --opt com.docker.network.bridge.name="$DIND_BRIDGE" "$DIND_NET" >/dev/null
@@ -136,6 +136,8 @@ while true; do
     -v "$CACHE_DIR/gomod:/cache/gomod" \
     -v "$CACHE_DIR/gopath:/cache/gopath" \
     -v "$CACHE_DIR/npm:/cache/npm" \
+    -v "$CACHE_DIR/buildkit:/cache/buildkit" \
+    -v "$CACHE_DIR/dhall:/cache/dhall" \
     --entrypoint /bin/bash \
     "$DIND_IMAGE" /usr/local/bin/runner-entry.sh &
   RUN_PID=$!
