@@ -12,6 +12,22 @@
 #
 # Rebuild this image (build-image.sh) only when the dep set or the pinned runner
 # version changes — NOT per job.
+
+# --- nix seed ---------------------------------------------------------------
+# A complete, pinned Nix installation, carried in the image purely as a SEED for
+# the persistent CI Nix store — a docker named volume mounted at /nix by
+# runner.sh. Jobs never install Nix over the network: runner-entry.sh copies
+# this into /nix the first time it finds that volume empty, and every job after
+# that reuses the warm store.
+#
+# It is staged at /nix-seed, NOT /nix, on purpose — runner.sh mounts the volume
+# OVER /nix, which would shadow anything the image put there.
+#
+# The version is pinned for reproducibility. This store is entirely separate
+# from the host's /nix, which is never mounted into a runner.
+ARG NIX_VERSION=2.34.8
+FROM nixos/nix:${NIX_VERSION} AS nixseed
+
 FROM ubuntu:24.04
 
 # Base deps, installed once:
@@ -81,6 +97,52 @@ COPY dl/actions-runner-linux-x64-${RUNNER_VERSION}.tar.gz /tmp/actions-runner.ta
 RUN mkdir -p /actions-runner \
  && tar xzf /tmp/actions-runner.tar.gz -C /actions-runner \
  && rm -f /tmp/actions-runner.tar.gz
+
+# Stage the Nix installation for runner-entry.sh to seed the persistent /nix
+# mount from. See the nixseed stage at the top for why this is NOT /nix.
+COPY --from=nixseed /nix /nix-seed
+
+# Nix config. This lives OUTSIDE /nix on purpose: /nix is bind-mounted per job,
+# so anything written under it by the image is invisible at runtime, while
+# /etc/nix is part of the image and always present.
+#
+#   experimental-features  `nix develop` (flakes) is the whole reason CI wants
+#                          nix; without this every invocation errors out.
+#   build-users-group=     empty => single-user mode, builds run as root. The
+#                          image has no nixbld users and there is no daemon
+#                          (see NIX_REMOTE below); leaving this at its default
+#                          makes every build fail looking for the build group.
+#   sandbox=false          matches the upstream nixos/nix image default. The
+#                          job container is already an isolation boundary, and
+#                          the sandbox's user-namespace requirements are a
+#                          failure class we gain nothing from here.
+#   keep-derivations       REQUIRED for the GC story to actually work. The
+#   keep-outputs           `nix develop --profile` root protects the devShell's
+#                          RUNTIME closure only — not the .drv files, and not
+#                          the flake input sources (nixpkgs) that EVALUATION
+#                          needs. Without these two, a GC deletes the nixpkgs
+#                          source and the .drv; the next job then re-fetches
+#                          nixpkgs and, if it cannot substitute, plans to build
+#                          stdenv from the stage0 bootstrap. Measured: a GC left
+#                          the store with "562 derivations will be built".
+#                          keep-derivations makes a rooted output retain its
+#                          derivation, which in turn retains its input sources.
+RUN mkdir -p /etc/nix \
+ && printf '%s\n' \
+      'experimental-features = nix-command flakes' \
+      'build-users-group =' \
+      'sandbox = false' \
+      'keep-derivations = true' \
+      'keep-outputs = true' \
+    > /etc/nix/nix.conf
+
+# NIX_REMOTE empty => talk to the store DIRECTLY rather than through a daemon.
+# There is no nix-daemon in this container, and a non-empty NIX_REMOTE is what
+# produces "cannot connect to socket at /nix/var/nix/daemon-socket/socket".
+# NIX_SSL_CERT_FILE points at Ubuntu's CA bundle so substituter TLS works.
+ENV NIX_REMOTE="" \
+    NIX_SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt \
+    PATH=/nix/var/nix/profiles/default/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
 # Entry script baked in (no per-launch bind-mount needed; runner.sh may still
 # bind-mount a working copy to override during development).

@@ -24,6 +24,9 @@
 #
 # Container contract (set by runner.sh via docker run):
 #   /cache/*              (rw)  persistent Go/npm caches (survive job + reboot)
+#   /nix                  (rw)  persistent CI Nix store — a DOCKER NAMED VOLUME
+#                               shared by all slots, seeded from the image's
+#                               /nix-seed when empty. Not the host's /nix.
 #   env RUNNER_URL           https://github.com/<owner>/<repo>
 #   env RUNNER_TOKEN         a FRESH registration token (minted by runner.sh)
 #   env RUNNER_NAME          unique runner name
@@ -69,6 +72,30 @@ docker volume prune -f >/dev/null 2>&1 || true
 #    at these via the runner's .env file (step 4) so warm caches are reused.
 mkdir -p /cache/go /cache/gomod /cache/gopath /cache/npm
 
+# 2a) Nix store. /nix is a docker named volume (runner.sh) shared by every
+#     slot, so the devShell closure is downloaded ONCE and every later job hits
+#     a warm local store. Jobs therefore do NOT run a Nix installer action —
+#     that action fetched an installer over the network on every job, and its
+#     10s request timeout is what intermittently failed CI.
+#
+#     The image carries a complete Nix installation at /nix-seed; the first job
+#     to find the mount empty copies it in. flock serialises that across the
+#     concurrently-starting slots — without it, N slots would race to populate
+#     the same store and interleave a half-copied installation. The lock file
+#     sits on the shared mount so it is the SAME lock in every container.
+log "ensuring the persistent /nix store is seeded ..."
+exec 9>/nix/.gha-seed.lock
+flock 9
+if [ ! -d /nix/store ]; then
+  log "/nix is empty — seeding from the image (/nix-seed) ..."
+  cp -a /nix-seed/. /nix/
+  log "/nix seeded ($(nix --version 2>/dev/null || echo 'nix version unknown'))"
+else
+  log "/nix already populated — reusing the warm store"
+fi
+flock -u 9
+exec 9>&-
+
 # The runner agent refuses to run as root unless RUNNER_ALLOW_RUNASROOT=1. We are
 # root in this throwaway per-job container, so set the escape hatch.
 export RUNNER_ALLOW_RUNASROOT=1
@@ -109,6 +136,14 @@ log "writing .env (tool-cache + persistent Go/npm caches) ..."
   echo "GOMODCACHE=/cache/gomod"
   echo "GOPATH=/cache/gopath"
   echo "npm_config_cache=/cache/npm"
+  # Nix, from the persistent /nix mount. PATH must carry the default profile so
+  # `nix` and `nix develop` are on it with no install step in the workflow.
+  # NIX_REMOTE stays EMPTY (direct store access; there is no daemon here) —
+  # a set value is what yields "cannot connect to socket at
+  # /nix/var/nix/daemon-socket/socket".
+  echo "PATH=/nix/var/nix/profiles/default/bin:${PATH}"
+  echo "NIX_REMOTE="
+  echo "NIX_SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt"
 } > .env
 
 log "running one job (run.sh) ..."

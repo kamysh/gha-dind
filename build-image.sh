@@ -20,6 +20,10 @@ RUNNER_VERSION="${RUNNER_VERSION:-2.335.1}"     # actions/runner release, pinned
 # config.env means "skip", rather than silently falling back to the default.
 GO_VERSION="${GO_VERSION-1.25.12}"
 NODE_VERSION="${NODE_VERSION-22.12.0}"
+# Nix installation seeded into the persistent CI store volume (see Dockerfile).
+# Unlike go/node this one is NOT skippable — a job that needs `nix develop` has
+# no other source of nix, so an empty value would just break that job.
+NIX_VERSION="${NIX_VERSION:-2.34.8}"
 
 RUNNER_TARBALL="dl/actions-runner-linux-x64-${RUNNER_VERSION}.tar.gz"
 
@@ -36,11 +40,12 @@ fi
 
 # 2) Build. The context is this dir; .dockerignore keeps it tiny (only the
 #    Dockerfile, the two entry scripts, and dl/<tarball> are needed).
-echo "-- building $IMAGE (runner ${RUNNER_VERSION}, go '${GO_VERSION:-none}', node '${NODE_VERSION:-none}') ..."
+echo "-- building $IMAGE (runner ${RUNNER_VERSION}, go '${GO_VERSION:-none}', node '${NODE_VERSION:-none}', nix ${NIX_VERSION}) ..."
 docker build \
   --build-arg "RUNNER_VERSION=${RUNNER_VERSION}" \
   --build-arg "GO_VERSION=${GO_VERSION}" \
   --build-arg "NODE_VERSION=${NODE_VERSION}" \
+  --build-arg "NIX_VERSION=${NIX_VERSION}" \
   -t "$IMAGE" \
   -f Dockerfile \
   .
