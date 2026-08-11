@@ -44,6 +44,16 @@ for i in $(seq 0 $((N - 1))); do
   echo "   slot $i -> pid ${pids[-1]}"
 done
 
-# Wait on all slots. If one dies, report it but keep the others running (a slot's
-# runner.sh already self-loops; it only exits here on an unrecoverable error).
-wait
+# Wait on all slots individually rather than a bare `wait` — bash's no-argument
+# `wait` always returns 0 regardless of what its background jobs exited with, so
+# it was silently reporting success to systemd even when every slot had died
+# (this is exactly what let the pool sit offline for 9h with Restart=on-failure
+# never firing: all 7 slots died in a boot-time DNS race, and the bare `wait`
+# still exited 0). Each runner.sh already retries transient failures internally
+# and only exits on something truly unrecoverable, so a non-zero slot exit here
+# is real and should make this script — and the systemd unit — fail loudly.
+status=0
+for pid in "${pids[@]}"; do
+  wait "$pid" || { echo "!! slot pid $pid exited non-zero" >&2; status=1; }
+done
+exit "$status"

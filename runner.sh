@@ -31,6 +31,7 @@ RUNNER_LABELS="${RUNNER_LABELS:-dind}"
 DIND_IMAGE="${DIND_IMAGE:-gha-dind-runner:latest}"   # PRE-BUILT by build-image.sh (deps + runner baked in)
 DIND_NET="gha-dind-net"
 DIND_BRIDGE="br-gha-dind"
+NIX_VOLUME="${NIX_VOLUME:-gha-dind-nix}"   # shared CI Nix store (docker volume)
 PAT_FILE="${PAT_FILE:-$here/secrets/gh-pat}"
 CACHE_DIR="$here/cache"
 RUNNER_NAME="gha-dind-$(hostname -s)-${SLOT}"
@@ -56,6 +57,14 @@ PAT="$(tr -d '\r\n' < "$PAT_FILE")"
 # --- one-time host setup (idempotent): trusted network + cache dirs ---
 mkdir -p "$CACHE_DIR"/{go,gomod,gopath,npm,buildkit,dhall}
 
+# The CI Nix store lives in a DOCKER NAMED VOLUME, not on the host filesystem.
+# docker owns its storage, the host's own /nix is never involved, and the volume
+# outlives the --rm job containers — which is the whole point: the devShell
+# closure is fetched once and every later job reuses it.
+# ONE volume shared by all slots (not per-slot) so that fetch happens once for
+# the pool rather than once per slot.
+docker volume inspect "$NIX_VOLUME" >/dev/null 2>&1 || docker volume create "$NIX_VOLUME" >/dev/null
+
 if ! docker network inspect "$DIND_NET" >/dev/null 2>&1; then
   docker network create --opt com.docker.network.bridge.name="$DIND_BRIDGE" "$DIND_NET" >/dev/null
 fi
@@ -66,13 +75,20 @@ fi
 # mint_reg_token: exchange the PAT for a FRESH single-use registration token.
 # Registration tokens are single-use and expire in ~1h, so one is minted PER JOB
 # right before each container launch.
+#
+# Returns 1 (without printing anything) on ANY failure to reach the GitHub API —
+# a DNS hiccup, a connect timeout, a 5xx — rather than letting `set -e` kill this
+# whole slot's loop. The caller retries on both empty output and a non-zero
+# return, so a transient failure here is just another lap of the while loop, not
+# a process death that requires systemd to notice and restart the pool.
 mint_reg_token() {
-  curl -fsS --connect-timeout 10 --max-time 30 -X POST \
+  local resp
+  resp="$(curl -fsS --connect-timeout 10 --max-time 30 -X POST \
     -H "Authorization: Bearer ${PAT}" \
     -H "Accept: application/vnd.github+json" \
     -H "X-GitHub-Api-Version: 2022-11-28" \
-    "https://api.github.com/repos/${REPO}/actions/runners/registration-token" \
-  | jq -r '.token'
+    "https://api.github.com/repos/${REPO}/actions/runners/registration-token")" || return 1
+  jq -r '.token' <<<"$resp"
 }
 
 log "starting ephemeral loop: repo=${REPO} name=${RUNNER_NAME} labels=${RUNNER_LABELS}"
@@ -105,7 +121,10 @@ on_signal() {
 trap on_signal INT TERM
 
 while true; do
-  REG_TOKEN="$(mint_reg_token)"
+  if ! REG_TOKEN="$(mint_reg_token)"; then
+    echo "ERROR: could not reach the GitHub API to mint a registration token (network/DNS not ready?). Retrying in 30s." >&2
+    sleep 30; continue
+  fi
   if [ -z "$REG_TOKEN" ] || [ "$REG_TOKEN" = "null" ]; then
     echo "ERROR: failed to mint a registration token (check PAT scope). Retrying in 30s." >&2
     sleep 30; continue
@@ -124,6 +143,16 @@ while true; do
   # to hang: no slot ran its trap, systemd waited out TimeoutStopSec, SIGKILLed
   # the lot, and every agent died still registered. Backgrounding + wait lets the
   # trap fire the moment the signal arrives.
+  #
+  # /nix is a DOCKER NAMED VOLUME ($NIX_VOLUME), the same mechanism the inner
+  # dockerd's /var/lib/docker uses above — docker-owned storage that survives
+  # the --rm container, with the host's own /nix left entirely alone. Without
+  # it every nix-using job re-downloaded the installer AND the whole devShell
+  # closure into a container destroyed at job end — a large recurring download
+  # on the 10s-timeout installer path, which is what intermittently failed CI
+  # (ETIMEDOUT fetching the nix installer). runner-entry.sh seeds the volume
+  # from the image's /nix-seed when it is empty, so a nix-using job needs ZERO
+  # network for nix on a warm store and only the substituter fetch on a cold one.
   docker run --rm --name "$CONTAINER" \
     --privileged \
     --network "$DIND_NET" \
@@ -138,6 +167,7 @@ while true; do
     -v "$CACHE_DIR/npm:/cache/npm" \
     -v "$CACHE_DIR/buildkit:/cache/buildkit" \
     -v "$CACHE_DIR/dhall:/cache/dhall" \
+    -v "$NIX_VOLUME:/nix" \
     --entrypoint /bin/bash \
     "$DIND_IMAGE" /usr/local/bin/runner-entry.sh &
   RUN_PID=$!
