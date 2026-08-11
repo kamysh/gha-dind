@@ -75,13 +75,20 @@ fi
 # mint_reg_token: exchange the PAT for a FRESH single-use registration token.
 # Registration tokens are single-use and expire in ~1h, so one is minted PER JOB
 # right before each container launch.
+#
+# Returns 1 (without printing anything) on ANY failure to reach the GitHub API —
+# a DNS hiccup, a connect timeout, a 5xx — rather than letting `set -e` kill this
+# whole slot's loop. The caller retries on both empty output and a non-zero
+# return, so a transient failure here is just another lap of the while loop, not
+# a process death that requires systemd to notice and restart the pool.
 mint_reg_token() {
-  curl -fsS --connect-timeout 10 --max-time 30 -X POST \
+  local resp
+  resp="$(curl -fsS --connect-timeout 10 --max-time 30 -X POST \
     -H "Authorization: Bearer ${PAT}" \
     -H "Accept: application/vnd.github+json" \
     -H "X-GitHub-Api-Version: 2022-11-28" \
-    "https://api.github.com/repos/${REPO}/actions/runners/registration-token" \
-  | jq -r '.token'
+    "https://api.github.com/repos/${REPO}/actions/runners/registration-token")" || return 1
+  jq -r '.token' <<<"$resp"
 }
 
 log "starting ephemeral loop: repo=${REPO} name=${RUNNER_NAME} labels=${RUNNER_LABELS}"
@@ -114,7 +121,10 @@ on_signal() {
 trap on_signal INT TERM
 
 while true; do
-  REG_TOKEN="$(mint_reg_token)"
+  if ! REG_TOKEN="$(mint_reg_token)"; then
+    echo "ERROR: could not reach the GitHub API to mint a registration token (network/DNS not ready?). Retrying in 30s." >&2
+    sleep 30; continue
+  fi
   if [ -z "$REG_TOKEN" ] || [ "$REG_TOKEN" = "null" ]; then
     echo "ERROR: failed to mint a registration token (check PAT scope). Retrying in 30s." >&2
     sleep 30; continue
