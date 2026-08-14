@@ -67,7 +67,7 @@ RUN export DEBIAN_FRONTEND=noninteractive \
 # (build-image.sh forwards GO_VERSION / NODE_VERSION from config.env); the job
 # then downloads that toolchain itself, exactly as on a GitHub-hosted runner.
 # Swap in whatever toolchains your own matrix needs.
-ARG GO_VERSION=1.25.12
+ARG GO_VERSION=1.26.6
 ARG NODE_VERSION=22.12.0
 ARG TOOLCACHE=/opt/hostedtoolcache
 RUN set -eux; \

@@ -18,7 +18,7 @@ RUNNER_VERSION="${RUNNER_VERSION:-2.335.1}"     # actions/runner release, pinned
 # jobs then download the toolchain themselves, as on a GitHub-hosted runner.
 # Use the ${VAR-default} form (not ${VAR:-default}) so an explicit empty value in
 # config.env means "skip", rather than silently falling back to the default.
-GO_VERSION="${GO_VERSION-1.25.12}"
+GO_VERSION="${GO_VERSION-1.26.6}"
 NODE_VERSION="${NODE_VERSION-22.12.0}"
 # Nix installation seeded into the persistent CI store volume (see Dockerfile).
 # Unlike go/node this one is NOT skippable — a job that needs `nix develop` has
