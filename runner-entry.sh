@@ -63,9 +63,13 @@ log "inner dockerd up ($(docker version --format '{{.Server.Version}}' 2>/dev/nu
 #     is the runner giving each job the clean docker state a hosted VM gets for
 #     free; it must NOT live in the workflow (ci.yml shouldn't clean up after us).
 log "resetting inner docker state (containers/networks/volumes; images kept) ..."
-docker ps -aq | xargs -r docker rm -f >/dev/null 2>&1 || true
-docker network prune -f >/dev/null 2>&1 || true
-docker volume prune -f >/dev/null 2>&1 || true
+# Errors are LOGGED, not swallowed (a silenced failure here is how leftover
+# volumes from one job survive to accumulate over hundreds of runs — that is
+# exactly what filled gha-runner-N-docker to 100+GB with orphaned job data).
+docker ps -aq | xargs -r docker rm -f || log "WARNING: docker rm -f had failures (see above) — some containers may not have been removed"
+docker network prune -f || log "WARNING: docker network prune failed"
+docker volume prune -af || log "WARNING: docker volume prune failed — orphaned volumes from this job may persist"
+log "inner docker state after reset: $(docker ps -aq | wc -l) containers, $(docker volume ls -q | wc -l) volumes, $(docker images -q | wc -l) images"
 
 # 2) Persistent caches for the toolchain (survive container removal + host reboot —
 #    they're host dirs, mounted by runner.sh). setup-go/setup-node + the jobs point
