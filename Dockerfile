@@ -92,7 +92,7 @@ RUN set -eux; \
 # Bake the pinned GitHub Actions runner agent into the image. build-image.sh
 # downloads the tarball to ./dl first (it's the build context). Extracted to
 # /actions-runner so runner-entry.sh never unpacks per launch.
-ARG RUNNER_VERSION=2.335.1
+ARG RUNNER_VERSION=2.337.0
 COPY dl/actions-runner-linux-x64-${RUNNER_VERSION}.tar.gz /tmp/actions-runner.tar.gz
 RUN mkdir -p /actions-runner \
  && tar xzf /tmp/actions-runner.tar.gz -C /actions-runner \

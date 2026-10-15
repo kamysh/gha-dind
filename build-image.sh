@@ -13,7 +13,7 @@ cd "$here"
 load_config "$here/config.env"
 
 IMAGE="${IMAGE:-gha-dind-runner:latest}"
-RUNNER_VERSION="${RUNNER_VERSION:-2.335.1}"     # actions/runner release, pinned (matches Dockerfile ARG)
+RUNNER_VERSION="${RUNNER_VERSION:-2.337.0}"     # actions/runner release, pinned (matches Dockerfile ARG)
 # Toolchains baked into the runner tool-cache. An EMPTY value skips that bake —
 # jobs then download the toolchain themselves, as on a GitHub-hosted runner.
 # Use the ${VAR-default} form (not ${VAR:-default}) so an explicit empty value in
