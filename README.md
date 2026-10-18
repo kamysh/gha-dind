@@ -14,6 +14,15 @@ Actions runner — your workflows do not need to know they are not on
 image cache that persist across jobs, and toolchains baked into the runner
 tool-cache so `actions/setup-go` / `setup-node` skip their per-job download.
 
+Agda workflows can also use the persistent `/cache/agda` host bind mount.
+The workflow must restore compatible `.agdai` interfaces into its own checkout,
+run Agda normally, then save interfaces only after successful checking. Do not
+point concurrent Agda processes at one writable build tree. Cache transport and
+compiler/library compatibility keys belong to the consuming repository; the
+runner only supplies storage. Adding this mount does not require an image
+rebuild. Existing runner processes need a separately approved rollout after
+their active jobs finish; do not restart the pool to apply it mid-job.
+
 ---
 
 ## Configure

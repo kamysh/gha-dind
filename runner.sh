@@ -55,7 +55,7 @@ docker image inspect "$DIND_IMAGE" >/dev/null 2>&1 \
 PAT="$(tr -d '\r\n' < "$PAT_FILE")"
 
 # --- one-time host setup (idempotent): trusted network + cache dirs ---
-mkdir -p "$CACHE_DIR"/{go,gomod,gopath,npm,buildkit,dhall}
+mkdir -p "$CACHE_DIR"/{go,gomod,gopath,npm,buildkit,dhall,agda}
 
 # The CI Nix store lives in a DOCKER NAMED VOLUME, not on the host filesystem.
 # docker owns its storage, the host's own /nix is never involved, and the volume
@@ -167,6 +167,7 @@ while true; do
     -v "$CACHE_DIR/npm:/cache/npm" \
     -v "$CACHE_DIR/buildkit:/cache/buildkit" \
     -v "$CACHE_DIR/dhall:/cache/dhall" \
+    -v "$CACHE_DIR/agda:/cache/agda" \
     -v "$NIX_VOLUME:/nix" \
     --entrypoint /bin/bash \
     "$DIND_IMAGE" /usr/local/bin/runner-entry.sh &
