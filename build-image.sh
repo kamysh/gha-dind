@@ -39,7 +39,7 @@ if [ ! -f "$RUNNER_TARBALL" ]; then
 fi
 
 # 2) Build. The context is this dir; .dockerignore keeps it tiny (only the
-#    Dockerfile, the two entry scripts, and dl/<tarball> are needed).
+#    Dockerfile, container scripts, and dl/<tarball> are needed).
 echo "-- building $IMAGE (runner ${RUNNER_VERSION}, go '${GO_VERSION:-none}', node '${NODE_VERSION:-none}', nix ${NIX_VERSION}) ..."
 docker build \
   --build-arg "RUNNER_VERSION=${RUNNER_VERSION}" \
@@ -52,4 +52,4 @@ docker build \
 
 echo "-- built $IMAGE"
 docker image inspect "$IMAGE" --format '   id={{.Id}}  size={{.Size}} bytes' 2>/dev/null || true
-echo "   runner.sh launches job containers FROM this image now."
+echo "   Select this image for runner.sh or local.sh with DIND_IMAGE=$IMAGE."

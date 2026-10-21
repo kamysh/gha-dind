@@ -1,0 +1,41 @@
+name: Checks
+on:
+  push:
+    branches: [main]
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  local-contracts:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+      - run: bash -n local.sh local-entry.sh container-init.sh runner-entry.sh
+      - run: node --test --test-reporter=tap local.test.mjs
+  local-container:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      IMAGE: gha-dind-local-check
+      DIND_IMAGE: gha-dind-local-check
+      GO_VERSION: '1.26.6'
+      NODE_VERSION: '22.23.1'
+    steps:
+      - uses: actions/checkout@v7
+      - name: Build the real local-command image
+        run: bash build-image.sh
+      - name: Check local lifecycle and default runner entrypoint
+        env:
+          CACHE_DIR: ${{ runner.temp }}/gha-local-cache
+        run: |
+          docker network create gha-dind-net
+          docker volume create gha-dind-nix
+          bash smoke-local.sh "$RUNNER_TEMP/local-smoke"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: local-container-evidence
+          path: ${{ runner.temp }}/local-smoke

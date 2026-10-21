@@ -37,68 +37,10 @@ set -eu
 log() { echo "== runner-entry: $*"; }
 echo "================ DinD GH-ACTIONS RUNNER (ubuntu) ================"
 
-# 1) Inner docker daemon. /var/lib/docker is a HOST NAMED VOLUME (runner.sh mounts
-#    gha-runner-<slot>-docker there) — a real ext4 fs — so dockerd auto-selects
-#    overlay2 (fast). Job steps that `docker run` (postgres) use THIS daemon.
-#    The volume is PERSISTENT across this slot's sequential jobs (it caches pulled
-#    images so postgres isn't re-pulled every job), so it also carries CONTAINERS
-#    from the previous job. A GitHub-hosted runner gets a fresh VM per job and
-#    never sees that; ours must reset it — see the container sweep below.
-log "starting inner dockerd ..."
-dockerd >/var/log/dockerd.log 2>&1 &
-i=0
-until docker info >/dev/null 2>&1; do
-  i=$((i + 1))
-  [ "$i" -le 30 ] || { echo "FATAL: inner dockerd did not start" >&2; tail -40 /var/log/dockerd.log >&2 || true; exit 1; }
-  sleep 1
-done
-log "inner dockerd up ($(docker version --format '{{.Server.Version}}' 2>/dev/null || echo '?'))"
-
-# 1a) Clean slate for THIS job: remove any containers/networks/volumes left in the
-#     inner dockerd by the previous job on this slot. Without this, a job that does
-#     `docker run --name postgres -p 5432:5432` collides with the prior job's
-#     leftover postgres ("container name /postgres already in use", exit 125) or
-#     its still-published :5432. IMAGES are deliberately NOT pruned — they are the
-#     cache this persistent volume exists to keep (postgres-ai stays pulled). This
-#     is the runner giving each job the clean docker state a hosted VM gets for
-#     free; it must NOT live in the workflow (ci.yml shouldn't clean up after us).
-log "resetting inner docker state (containers/networks/volumes; images kept) ..."
-# Errors are LOGGED, not swallowed (a silenced failure here is how leftover
-# volumes from one job survive to accumulate over hundreds of runs — that is
-# exactly what filled gha-runner-N-docker to 100+GB with orphaned job data).
-docker ps -aq | xargs -r docker rm -f || log "WARNING: docker rm -f had failures (see above) — some containers may not have been removed"
-docker network prune -f || log "WARNING: docker network prune failed"
-docker volume prune -af || log "WARNING: docker volume prune failed — orphaned volumes from this job may persist"
-log "inner docker state after reset: $(docker ps -aq | wc -l) containers, $(docker volume ls -q | wc -l) volumes, $(docker images -q | wc -l) images"
-
-# 2) Persistent caches for the toolchain (survive container removal + host reboot —
-#    they're host dirs, mounted by runner.sh). setup-go/setup-node + the jobs point
-#    at these via the runner's .env file (step 4) so warm caches are reused.
-mkdir -p /cache/go /cache/gomod /cache/gopath /cache/npm
-
-# 2a) Nix store. /nix is a docker named volume (runner.sh) shared by every
-#     slot, so the devShell closure is downloaded ONCE and every later job hits
-#     a warm local store. Jobs therefore do NOT run a Nix installer action —
-#     that action fetched an installer over the network on every job, and its
-#     10s request timeout is what intermittently failed CI.
-#
-#     The image carries a complete Nix installation at /nix-seed; the first job
-#     to find the mount empty copies it in. flock serialises that across the
-#     concurrently-starting slots — without it, N slots would race to populate
-#     the same store and interleave a half-copied installation. The lock file
-#     sits on the shared mount so it is the SAME lock in every container.
-log "ensuring the persistent /nix store is seeded ..."
-exec 9>/nix/.gha-seed.lock
-flock 9
-if [ ! -d /nix/store ]; then
-  log "/nix is empty — seeding from the image (/nix-seed) ..."
-  cp -a /nix-seed/. /nix/
-  log "/nix seeded ($(nix --version 2>/dev/null || echo 'nix version unknown'))"
-else
-  log "/nix already populated — reusing the warm store"
-fi
-flock -u 9
-exec 9>&-
+# Shared initialization also serves local-command containers.
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+. "$here/container-init.sh"
+init_container
 
 # The runner agent refuses to run as root unless RUNNER_ALLOW_RUNASROOT=1. We are
 # root in this throwaway per-job container, so set the escape hatch.
