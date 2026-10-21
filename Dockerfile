@@ -147,4 +147,5 @@ ENV NIX_REMOTE="" \
 # Entry script baked in (no per-launch bind-mount needed; runner.sh may still
 # bind-mount a working copy to override during development).
 COPY runner-entry.sh /usr/local/bin/runner-entry.sh
-RUN chmod +x /usr/local/bin/runner-entry.sh
+COPY container-init.sh local-entry.sh /usr/local/bin/
+RUN chmod +x /usr/local/bin/runner-entry.sh /usr/local/bin/local-entry.sh

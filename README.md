@@ -105,6 +105,54 @@ runs-on: [self-hosted, dind]
 - **`lib.sh`** — shared `config.env` loading.
 - **`systemd/gha-dind-pool.service`** — runs the pool on boot. See below.
 
+## Local commands
+
+`local.sh` runs a bounded command directly on this host in a dedicated DinD
+container. It uses the same image and container initialization as CI, without
+registering a GitHub runner. The existing pool continues independently.
+
+```sh
+./local.sh --name oracle-example --workspace /absolute/owned-workspace \
+  --output /absolute/new-evidence --timeout-seconds 600 -- \
+  bash -c 'go version; node --version; docker info'
+```
+
+The workspace is mounted at `/workspace`, and the new evidence directory at
+`/evidence`. The inner Docker state uses a separately named volume, removed on
+completion. Container names and volumes belonging to another run are never
+replaced. Commands, including failures and timeouts, retain their exit status;
+complete stdout/stderr is in `container.log`, with lifecycle logs and image
+identity alongside it. Evidence ownership is returned to the invoking user.
+`--own-workspace` also returns ownership of a caller-owned workspace, including
+new build files; use it only for a workspace dedicated to this invocation.
+No host Docker socket is mounted.
+
+The existing `gha-dind-net` network and persistent Nix volume must already
+exist. Go/npm/Agda caches use the normal cache directories (`CACHE_DIR` can
+select another directory). The image must contain `container-init.sh` and
+`local-entry.sh`; rebuild with `build-image.sh` before deploying local mode.
+Use `IMAGE` to build under a separate tag and `DIND_IMAGE` to select it at run
+time. Rebuilding an image does not restart or replace an existing runner.
+
+Local mode exports CI and cache settings and selects the installed Go/Node
+toolchains. Set `LOCAL_GO_VERSION` and `LOCAL_NODE_VERSION` to select exact
+installed versions; multiple installed versions otherwise fail explicitly.
+Credentials are only supplied through an explicit `--env-file`; no GitHub
+runner administration token is required or mounted. Docker access still has
+the privileged-container trust boundary described below.
+
+This command supplies execution, not a schedule. A host scheduler can prepare
+an environment before a test window, then have the already running command
+release the actual tests at the specified time. Installing timers or services
+is a separate host configuration action.
+
+`bash check.sh` is the maintained verification entrypoint. It retains complete
+logs/statuses, requires named contract checks (fake Docker CLI), builds the real
+Dockerfile, and checks real container success/failure/timeout, ownership,
+cleanup, and default runner initialization with mock registration scripts.
+`--contracts` and `--container` select the two CI lanes. No live registration
+token is needed. The existing network and Nix volume must already be present.
+
 ## Boot-persistent pool
 
 `pool.sh` is the manual bring-up. For a fleet that survives reboot, **systemd is
