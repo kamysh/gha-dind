@@ -146,10 +146,12 @@ an environment before a test window, then have the already running command
 release the actual tests at the specified time. Installing timers or services
 is a separate host configuration action.
 
-Contract checks: `node --test local.test.mjs` (fake Docker CLI).
-`bash smoke-local.sh /absolute/new-smoke-evidence` checks real container
-success/failure/timeout, ownership, cleanup, and default runner initialization
-with mock registration scripts. CI runs both checks using the real Dockerfile.
+`bash check.sh` is the maintained verification entrypoint. It retains complete
+logs/statuses, requires named contract checks (fake Docker CLI), builds the real
+Dockerfile, and checks real container success/failure/timeout, ownership,
+cleanup, and default runner initialization with mock registration scripts.
+`--contracts` and `--container` select the two CI lanes. No live registration
+token is needed. The existing network and Nix volume must already be present.
 
 ## Boot-persistent pool
 
