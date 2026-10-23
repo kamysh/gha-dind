@@ -5,7 +5,14 @@ init_container() {
   local strict_cleanup="${1:-warn}"
   export DOCKER_HOST=unix:///var/run/docker.sock
   unset DOCKER_CONTEXT DOCKER_TLS_VERIFY DOCKER_CERT_PATH
-  dockerd >/var/log/dockerd.log 2>&1 &
+  # Docker restart preserves the writable layer, including a stale PID file.
+  # Never remove it underneath an already responsive inner daemon.
+  if docker info >/dev/null 2>&1; then
+    echo 'FATAL: inner daemon already running before initialization' >&2
+    return 1
+  fi
+  rm -f /var/run/docker.pid /var/run/docker.sock
+  dockerd >>/var/log/dockerd.log 2>&1 &
   local attempts=0
   until docker info >/dev/null 2>&1; do
     attempts=$((attempts + 1))
