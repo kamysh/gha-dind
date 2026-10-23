@@ -243,3 +243,45 @@ all unnecessary on Ubuntu.
 
 Apache License 2.0 — see [LICENSE](LICENSE).
 Contributions are subject to the [Contributor License Agreement](CLA.md).
+
+## Framework-owned daily local jobs
+
+`scheduled.sh` manages a persistent, separately named DinD scheduler container.
+It uses Docker's existing restart policy, not a new host service or timer. It
+never registers a GitHub runner or restarts pool slots. `scheduled.example.json`
+shows Yovico's 03:00 preparation and 04:00–06:00 America/Los_Angeles Oracle
+window, following DST. Build a distinct reviewed image; do not replace a live
+pool's image tag.
+
+```sh
+DIND_IMAGE=reviewed-image bash scheduled.sh up --name oracle \
+  --config /absolute/job.json --env-file /absolute/private.env
+bash scheduled.sh status --name oracle
+bash scheduled.sh export --name oracle --date 2026-10-23 --output /absolute/new-evidence
+bash scheduled.sh down --name oracle
+```
+
+The owner-only literal env file provides `GH_TOKEN` for private source/Actions
+reads and the existing Slack webhook (`SLACK_WEBHOOK_ENGINEERING_URL`, falling
+back to `SLACK_WEBHOOK_URL`). Values are copied into container configuration;
+Docker administrators can inspect them. Slack variables are stripped from job
+commands. Configuration is copied into the state volume, so restarts need no
+host config/credential file or checkout. No host Docker socket or host `/nix`
+is mounted. `/nix` remains the framework's named volume.
+
+The controller pins source once, creates a private worktree, checks baked tools
+and passes explicit date/start/end/output environment variables. A passing job
+must return matching committed evidence after the complete window. All command
+output and exit records are retained. Inner Docker resources and the owned source
+worktree are cleaned after each attempt. Failed cleanup fails the run.
+
+`gha-scheduled-NAME-state` retains daily records, logs, reports and Slack
+acknowledgements. A restart marks an interrupted attempt, reports offline days
+since `startDate` and never catches campaigns up. Failed Slack delivery retries
+in five minutes. Concurrent delivery is serialized; a crash after acceptance
+but before receipt persistence can repeat a stable job/date message. No local
+controller can report while its machine is offline. Evidence has no automatic
+expiration. `down` preserves evidence volumes and checks container ownership.
+
+`bash check.sh` covers contract checks and real isolated local/default/scheduler
+container lifecycles. It launches no Oracle campaign or real GitHub runner.

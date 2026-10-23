@@ -16,6 +16,21 @@ init_container() {
     fi
     sleep 1
   done
+  cleanup_inner_docker "$strict_cleanup"
+  mkdir -p /cache/go /cache/gomod /cache/gopath /cache/npm
+  exec 9>/nix/.gha-seed.lock
+  flock 9
+  if [ ! -d /nix/store ]; then cp -a /nix-seed/. /nix/; fi
+  flock -u 9
+  exec 9>&-
+  export RUNNER_TOOL_CACHE=/opt/hostedtoolcache
+  export AGENT_TOOLSDIRECTORY=/opt/hostedtoolcache
+  export GOCACHE=/cache/go GOMODCACHE=/cache/gomod GOPATH=/cache/gopath
+  export npm_config_cache=/cache/npm
+}
+
+cleanup_inner_docker() {
+  local strict_cleanup="${1:-warn}"
   # Only this container's inner daemon is reachable. Keep cached images.
   docker ps -aq | xargs -r docker rm -f || {
     echo 'WARNING: inner container cleanup failed' >&2
@@ -29,14 +44,27 @@ init_container() {
     echo 'WARNING: inner volume cleanup failed' >&2
     [ "$strict_cleanup" != strict ] || return 1
   }
-  mkdir -p /cache/go /cache/gomod /cache/gopath /cache/npm
-  exec 9>/nix/.gha-seed.lock
-  flock 9
-  if [ ! -d /nix/store ]; then cp -a /nix-seed/. /nix/; fi
-  flock -u 9
-  exec 9>&-
-  export RUNNER_TOOL_CACHE=/opt/hostedtoolcache
-  export AGENT_TOOLSDIRECTORY=/opt/hostedtoolcache
-  export GOCACHE=/cache/go GOMODCACHE=/cache/gomod GOPATH=/cache/gopath
-  export npm_config_cache=/cache/npm
+}
+
+tool_path() {
+  local tool="$1" version="$2" candidates=()
+  if [ -n "$version" ]; then
+    [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || return 1
+    candidates=("/opt/hostedtoolcache/$tool/$version/x64")
+  else
+    shopt -s nullglob
+    candidates=(/opt/hostedtoolcache/"$tool"/*/x64)
+    shopt -u nullglob
+  fi
+  [ "${#candidates[@]}" -eq 1 ] && [ -x "${candidates[0]}/bin/$tool" ] || {
+    echo "Exactly one installed $tool is required; select LOCAL_${tool^^}_VERSION if needed" >&2
+    return 1
+  }
+  printf '%s/bin' "${candidates[0]}"
+}
+init_toolchains() {
+  local go_path node_path
+  go_path="$(tool_path go "${LOCAL_GO_VERSION:-}")"
+  node_path="$(tool_path node "${LOCAL_NODE_VERSION:-}")"
+  export PATH="$go_path:$node_path:$PATH"
 }

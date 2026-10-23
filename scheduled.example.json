@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "name": "oracle",
+  "repository": "yovico-ai/yovico",
+  "ref": "main",
+  "timezone": "America/Los_Angeles",
+  "startDate": "2026-10-23",
+  "prepareAt": "03:00",
+  "startAt": "04:00",
+  "endAt": "06:00",
+  "reportAt": "06:15",
+  "command": ["bash", "scripts/oracle-scheduled.sh"],
+  "report": "verification/report.json"
+}
