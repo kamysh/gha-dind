@@ -27,9 +27,9 @@ run_check() {
   return "$status"
 }
 if [ "$mode" != container ]; then
-  run_check syntax bash -n local.sh local-entry.sh container-init.sh runner-entry.sh smoke-local.sh check.sh
-  run_check contracts timeout --foreground 30s node --test --test-reporter=tap local.test.mjs
-  node -e 'const fs=require("node:fs"),assert=require("node:assert/strict"),tap=fs.readFileSync(process.argv[1],"utf8");assert(Number(/^# tests (\d+)$/m.exec(tap)?.[1])>=3);for(const key of ["fail","skipped","cancelled"])assert(new RegExp("^# "+key+" 0$","m").test(tap));assert(!/^# Subtest: .*local[.]test[.]mjs$/m.test(tap));' "$output/contracts.log"
+  run_check syntax bash -n local.sh local-entry.sh container-init.sh runner-entry.sh smoke-local.sh scheduled.sh scheduled-entry.sh scheduled-cleanup.sh scheduled-credential.sh smoke-scheduled.sh check.sh
+  run_check contracts timeout --foreground 30s node --test --test-reporter=tap local.test.mjs scheduled.test.mjs
+  node -e 'const fs=require("node:fs"),assert=require("node:assert/strict"),tap=fs.readFileSync(process.argv[1],"utf8");assert(Number(/^# tests (\d+)$/m.exec(tap)?.[1])>=9);for(const key of ["fail","skipped","cancelled"])assert(new RegExp("^# "+key+" 0$","m").test(tap));assert(!/^# Subtest: .*local[.]test[.]mjs$/m.test(tap));' "$output/contracts.log"
 fi
 if [ "$mode" != contracts ]; then
   export IMAGE="gha-dind-check:$(git rev-parse --short HEAD)-$$"
@@ -37,6 +37,7 @@ if [ "$mode" != contracts ]; then
   export CACHE_DIR="$output/cache"
   run_check image timeout --foreground --signal=TERM --kill-after=10s 900s bash build-image.sh
   run_check smoke timeout --foreground --signal=TERM --kill-after=10s 180s bash smoke-local.sh "$output/smoke"
+  run_check scheduled-smoke timeout --foreground --signal=TERM --kill-after=10s 180s bash smoke-scheduled.sh "$output/scheduled-smoke"
   docker image inspect "$IMAGE" >"$output/image.json"
 fi
 printf 'passed\n' > "$output/result"

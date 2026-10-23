@@ -28,25 +28,7 @@ trap 'stop_local 130' INT
 trap 'stop_local 143' TERM
 init_container strict
 
-tool_path() {
-  local tool="$1" version="$2" candidates=()
-  if [ -n "$version" ]; then
-    [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "Invalid $tool version" >&2; return 1; }
-    candidates=("/opt/hostedtoolcache/$tool/$version/x64")
-  else
-    shopt -s nullglob
-    candidates=(/opt/hostedtoolcache/"$tool"/*/x64)
-    shopt -u nullglob
-  fi
-  [ "${#candidates[@]}" -eq 1 ] && [ -x "${candidates[0]}/bin/$tool" ] || {
-    echo "Exactly one installed $tool is required; select LOCAL_${tool^^}_VERSION if needed" >&2
-    return 1
-  }
-  printf '%s/bin' "${candidates[0]}"
-}
-go_path="$(tool_path go "${LOCAL_GO_VERSION:-}")"
-node_path="$(tool_path node "${LOCAL_NODE_VERSION:-}")"
-export PATH="$go_path:$node_path:$PATH"
+init_toolchains
 export CI=true
 cd /workspace
 setsid "$@" &

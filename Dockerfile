@@ -148,4 +148,6 @@ ENV NIX_REMOTE="" \
 # bind-mount a working copy to override during development).
 COPY runner-entry.sh /usr/local/bin/runner-entry.sh
 COPY container-init.sh local-entry.sh /usr/local/bin/
-RUN chmod +x /usr/local/bin/runner-entry.sh /usr/local/bin/local-entry.sh
+COPY scheduled-entry.sh scheduled-cleanup.sh scheduled-credential.sh /usr/local/bin/
+COPY scheduled.mjs scheduled-process.mjs /usr/local/lib/gha-dind/
+RUN chmod +x /usr/local/bin/runner-entry.sh /usr/local/bin/local-entry.sh /usr/local/bin/scheduled-credential.sh
