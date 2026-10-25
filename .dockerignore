@@ -6,4 +6,9 @@
 !runner-entry.sh
 !container-init.sh
 !local-entry.sh
+!scheduled-entry.sh
+!scheduled-cleanup.sh
+!scheduled-credential.sh
+!scheduled.mjs
+!scheduled-process.mjs
 !dl/actions-runner-linux-x64-*.tar.gz
